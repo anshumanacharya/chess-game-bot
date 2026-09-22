@@ -1,0 +1,4 @@
+[submodule "chess-engine-src"]
+	path = chess-engine-src
+	url = https://github.com/anshumanacharya/chess-game-
+	branch = main
