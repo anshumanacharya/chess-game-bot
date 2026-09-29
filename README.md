@@ -11,8 +11,12 @@ and web build, which always compile against whatever is on this repo's `main` br
 
 ## How it works
 
-Three small, independent pieces:
+Four small, independent pieces:
 
+- **`OpeningBook`** — plays the first few moves of a game from a bundled book built from Lichess's
+  open [chess-openings](https://github.com/lichess-org/chess-openings) dataset (CC0), so openings
+  look like real chess instead of material-only guesses. Fully offline: the data ships as
+  generated source (`OpeningBookData.kt`). See [Opening book](#opening-book).
 - **`TwoPlySearch`** — looks at every legal move, then one ply further at the opponent's best
   material-grabbing reply, and returns whichever of its own moves comes out best. This is what
   finds a free piece or an available mate. It's deterministic: same position in, same "best" move
@@ -27,6 +31,8 @@ Three small, independent pieces:
 
 ```
 ChessBot.chooseMove(state)
+  ├─ first bookMaxPlies half-moves: a weighted-random OpeningBook move (unless the position is
+  │    off-book or it rolls bookDeviationProbability)
   ├─ occasionally: a random legal move (BotConfig.blunderProbability)
   └─ otherwise: the TwoPlySearch move with the highest (score + random noise)
                  │
@@ -43,6 +49,8 @@ data class BotConfig(
     val noiseCentipawns: Int = 150,       // how much randomness blurs the search's judgment
     val blunderProbability: Double = 0.08, // chance of an outright random move instead
     val pieceValues: PieceValues = PieceValues.STANDARD,
+    val bookMaxPlies: Int = 8,               // half-moves to consult the opening book for; 0 = off
+    val bookDeviationProbability: Double = 0.10, // chance to skip the book and search instead
     val random: Random = Random.Default    // inject a seeded Random for reproducible tests
 )
 ```
@@ -50,11 +58,11 @@ data class BotConfig(
 Three named presets to start from:
 
 ```kotlin
-ChessBot(BotConfig.STRONG)    // noise 40, blunder 1%  — sharp, few oversights
-ChessBot(BotConfig.CASUAL)    // noise 150, blunder 8% — the default; a rough ~1000 Elo
+ChessBot(BotConfig.STRONG)    // noise 40, blunder 1%, book 16 plies  — sharp, few oversights
+ChessBot(BotConfig.CASUAL)    // noise 150, blunder 8%, book 8 plies — the default; a rough ~1000 Elo
                                //   design target, not a calibrated rating (no rating engine to
                                //   test against)
-ChessBot(BotConfig.BEGINNER)  // noise 300, blunder 20% — frequent, obvious mistakes
+ChessBot(BotConfig.BEGINNER)  // noise 300, blunder 20%, book 4 plies (30% deviation) — frequent, obvious mistakes
 ```
 
 Override individual fields with `copy`:
@@ -68,6 +76,19 @@ To value pieces differently, pass custom `PieceValues`:
 ```kotlin
 BotConfig.CASUAL.copy(pieceValues = PieceValues(knight = 320, bishop = 330))
 ```
+
+## Opening book
+
+- Lookup is by the exact move sequence played so far (no transposition handling). A move's weight
+  is how many named opening lines continue with it — a popularity proxy, not real game statistics
+  (Lichess's opening-explorer API requires a login, so it isn't used).
+- The book only applies to games that started from the standard position: `OpeningBook` replays
+  `moveHistory` from `GameState.newGame()` and ignores a custom-setup position, even one with an
+  empty history.
+- Regenerate with `pip install chess` then `python tools/generate_opening_book.py [--max-plies 16]`
+  (needs network once). Commit the regenerated `OpeningBookData.kt`; builds never touch the network.
+  The data is split into ~40 KB string chunks because JVM string constants cap at 64 KB.
+- `OpeningBookTest` replays every bundled line through the rules engine, so a bad line fails CI.
 
 ## Extending it
 
