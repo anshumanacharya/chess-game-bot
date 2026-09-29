@@ -9,6 +9,7 @@ import com.chessapp.engine.MoveGenerator
  * by default) and call [chooseMove] once per turn.
  *
  * This class only wires the pieces together; it holds no chess-playing logic of its own:
+ * - [OpeningBook] supplies the first few moves of a game, before any search happens.
  * - [TwoPlySearch] finds the objectively best move it can see two plies deep.
  * - [BotConfig.noiseCentipawns] and [BotConfig.blunderProbability] are layered on top here, so
  *   the bot doesn't always play that objectively best move.
@@ -25,6 +26,12 @@ class ChessBot(private val config: BotConfig = BotConfig.CASUAL) {
     fun chooseMove(state: GameState): Move? {
         val legalMoves = MoveGenerator.legalMoves(state)
         if (legalMoves.isEmpty()) return null
+
+        if (state.moveHistory.size < config.bookMaxPlies &&
+            config.random.nextDouble() >= config.bookDeviationProbability
+        ) {
+            OpeningBook.pick(state, config.random)?.let { return it }
+        }
 
         if (config.random.nextDouble() < config.blunderProbability) {
             return legalMoves.random(config.random)
